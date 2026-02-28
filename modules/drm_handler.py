@@ -72,6 +72,7 @@ async def drm_handler(bot: Client, m: Message):
         await m.delete(True)
         file_name, ext = os.path.splitext(os.path.basename(x))  # Extract filename & extension
         path = f"./downloads/{m.chat.id}"
+        os.makedirs(path, exist_ok=True)
         with open(x, "r") as f:
             content = f.read()
         lines = content.split("\n")
@@ -261,376 +262,491 @@ async def drm_handler(bot: Client, m: Message):
     # Create a semaphore for concurrent downloads
     semaphore = asyncio.Semaphore(concurrent_downloads)
     
+    # Create download directory if not exists
+    download_dir = f"./downloads/{m.chat.id}"
+    os.makedirs(download_dir, exist_ok=True)
+    
     async def download_single_link(index, link_data):
-        nonlocal count, failed_count
+        nonlocal failed_count
         
-        if globals.cancel_requested:
-            return
+        # Create unique download ID for this link
+        download_id = f"DL_{index}_{int(time.time())}"
         
-        Vxy = link_data[1].replace("file/d/","uc?export=download&id=").replace("www.youtube-nocookie.com/embed", "youtu.be").replace("?modestbranding=1", "").replace("/view?usp=sharing","")
-        url = "https://" + Vxy
-        link0 = "https://" + Vxy
-#........................................................................................................................................................................................
-         
-        name1 = link_data[0].replace("(", "[").replace(")", "]").replace("_", "").replace("\t", "").replace(":", "").replace("/", "").replace("+", "").replace("#", "").replace("|", "").replace("@", "").replace("*", "").replace(".", "").replace("https", "").replace("http", "").strip()
-        
-        if m.text:
-            if "youtu" in url:
-                oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
-                response = requests.get(oembed_url)
-                audio_title = response.json().get('title', 'YouTube Video')
-                audio_title = audio_title.replace("_", " ")
-                name = f'{audio_title[:60]}'
-                namef = f'{audio_title[:60]}'
-            else:
-                name = f'{name1[:60]}'
-                namef = f'{name1[:60]}'
-        else:
-            if topic == "/yes":
-                raw_title = link_data[0]
-                t_match = re.search(r"[\(\[]([^\)\]]+)[\)\]]", raw_title)
-                if t_match:
-                    t_name = t_match.group(1).strip()
-                    v_name = re.sub(r"^[\(\[][^\)\]]+[\)\]]\s*", "", raw_title)
-                    v_name = re.sub(r"[\(\[][^\)\]]+[\)\]]", "", v_name)
-                    v_name = re.sub(r":.*", "", v_name).strip()
+        try:
+            if globals.cancel_requested:
+                return {"status": "cancelled", "index": index}
+            
+            logging.info(f"[{download_id}] Starting download for index {index}")
+            
+            Vxy = link_data[1].replace("file/d/","uc?export=download&id=").replace("www.youtube-nocookie.com/embed", "youtu.be").replace("?modestbranding=1", "").replace("/view?usp=sharing","")
+            url = "https://" + Vxy
+            link0 = "https://" + Vxy
+            
+            logging.info(f"[{download_id}] Original URL: {link0}")
+            logging.info(f"[{download_id}] Processed URL: {url}")
+    #........................................................................................................................................................................................
+            
+            name1 = link_data[0].replace("(", "[").replace(")", "]").replace("_", "").replace("\t", "").replace(":", "").replace("/", "").replace("+", "").replace("#", "").replace("|", "").replace("@", "").replace("*", "").replace(".", "").replace("https", "").replace("http", "").strip()
+            
+            if m.text:
+                if "youtu" in url:
+                    try:
+                        oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
+                        response = requests.get(oembed_url, timeout=10)
+                        audio_title = response.json().get('title', 'YouTube Video')
+                        audio_title = audio_title.replace("_", " ")
+                        name = f'{audio_title[:60]}'
+                        namef = f'{audio_title[:60]}'
+                    except Exception as e:
+                        logging.error(f"[{download_id}] YouTube oembed failed: {str(e)}")
+                        name = f'{name1[:60]}'
+                        namef = f'{name1[:60]}'
                 else:
-                    t_name = "Untitled"
-                    v_name = re.sub(r":.*", "", raw_title).strip()
-                
-                if endfilename == "/d":
-                    name = f'{str(index).zfill(3)}) {name1[:60]}'
-                    namef = f'{v_name}'
-                else:
-                    name = f'{str(index).zfill(3)}) {name1[:60]} {endfilename}'
-                    namef = f'{v_name} {endfilename}'
-            else:
-                if endfilename == "/d":
-                    name = f'{str(index).zfill(3)}) {name1[:60]}'
+                    name = f'{name1[:60]}'
                     namef = f'{name1[:60]}'
-                else:
-                    name = f'{str(index).zfill(3)}) {name1[:60]} {endfilename}'
-                    namef = f'{name1[:60]} {endfilename}'
+            else:
+                if topic == "/yes":
+                    raw_title = link_data[0]
+                    t_match = re.search(r"[\(\[]([^\)\]]+)[\)\]]", raw_title)
+                    if t_match:
+                        t_name = t_match.group(1).strip()
+                        v_name = re.sub(r"^[\(\[][^\)\]]+[\)\]]\s*", "", raw_title)
+                        v_name = re.sub(r"[\(\[][^\)\]]+[\)\]]", "", v_name)
+                        v_name = re.sub(r":.*", "", v_name).strip()
+                    else:
+                        t_name = "Untitled"
+                        v_name = re.sub(r":.*", "", raw_title).strip()
                     
-#........................................................................................................................................................................................
-        if "visionias" in url:
-            async with ClientSession() as session:
-                async with session.get(url, headers={'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9', 'Accept-Language': 'en-US,en;q=0.9', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Pragma': 'no-cache', 'Referer': 'http://www.visionias.in/', 'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'cross-site', 'Upgrade-Insecure-Requests': '1', 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; RMX2121) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36', 'sec-ch-ua': '"Chromium";v="107", "Not=A?Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"',}) as resp:
-                    text = await resp.text()
-                    url = re.search(r"(https://.*?playlist.m3u8.*?)\"", text).group(1)
+                    if endfilename == "/d":
+                        name = f'{str(index).zfill(3)}) {name1[:60]}'
+                        namef = f'{v_name}'
+                    else:
+                        name = f'{str(index).zfill(3)}) {name1[:60]} {endfilename}'
+                        namef = f'{v_name} {endfilename}'
+                else:
+                    if endfilename == "/d":
+                        name = f'{str(index).zfill(3)}) {name1[:60]}'
+                        namef = f'{name1[:60]}'
+                    else:
+                        name = f'{str(index).zfill(3)}) {name1[:60]} {endfilename}'
+                        namef = f'{name1[:60]} {endfilename}'
+            
+            logging.info(f"[{download_id}] Processed name: {namef}")
+    #........................................................................................................................................................................................
+            if "visionias" in url:
+                try:
+                    async with ClientSession() as session:
+                        async with session.get(url, headers={'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9', 'Accept-Language': 'en-US,en;q=0.9', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Pragma': 'no-cache', 'Referer': 'http://www.visionias.in/', 'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'cross-site', 'Upgrade-Insecure-Requests': '1', 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; RMX2121) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36', 'sec-ch-ua': '"Chromium";v="107", "Not=A?Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"',}) as resp:
+                            text = await resp.text()
+                            url = re.search(r"(https://.*?playlist.m3u8.*?)\"", text).group(1)
+                            logging.info(f"[{download_id}] Visionias URL extracted: {url}")
+                except Exception as e:
+                    logging.error(f"[{download_id}] Visionias extraction failed: {str(e)}")
 
-        if "acecwply" in url:
-            cmd = f'yt-dlp -o "{name}.%(ext)s" -f "bestvideo[height<={raw_text2}]+bestaudio" --hls-prefer-ffmpeg --no-keep-video --remux-video mkv --no-warning "{url}"'
-     
-        # --- Unified Classplus/Testbook handler using ITSGOLU API ---
-        if any(x in url for x in ["https://cpvod.testbook.com/", "classplusapp.com/drm/", "media-cdn.classplusapp.com", "media-cdn-alisg.classplusapp.com", "media-cdn-a.classplusapp.com", "tencdn.classplusapp", "videos.classplusapp", "webvideos.classplusapp.com"]):
-            # normalize cpvod -> media-cdn path used by API
-            url_norm = url.replace("https://cpvod.testbook.com/", "https://media-cdn.classplusapp.com/drm/")
-            api_url_call = f"https://itsgolu-cp-api.vercel.app/itsgolu?url={url_norm}@ITSGOLU_OFFICIAL&user_id={user_id}"
+            if "acecwply" in url:
+                cmd = f'yt-dlp -o "{name}.%(ext)s" -f "bestvideo[height<={raw_text2}]+bestaudio" --hls-prefer-ffmpeg --no-keep-video --remux-video mkv --no-warning "{url}"'
+            
+            # --- Unified Classplus/Testbook handler using ITSGOLU API ---
             keys_string = ""
             mpd = None
-            try:
-                resp = requests.get(api_url_call, timeout=30)
-                data = resp.json()
+            if any(x in url for x in ["https://cpvod.testbook.com/", "classplusapp.com/drm/", "media-cdn.classplusapp.com", "media-cdn-alisg.classplusapp.com", "media-cdn-a.classplusapp.com", "tencdn.classplusapp", "videos.classplusapp", "webvideos.classplusapp.com"]):
+                # normalize cpvod -> media-cdn path used by API
+                url_norm = url.replace("https://cpvod.testbook.com/", "https://media-cdn.classplusapp.com/drm/")
+                api_url_call = f"https://itsgolu-cp-api.vercel.app/itsgolu?url={url_norm}@ITSGOLU_OFFICIAL&user_id={user_id}"
+                logging.info(f"[{download_id}] Calling ITSGOLU API: {api_url_call}")
+                
+                try:
+                    resp = requests.get(api_url_call, timeout=30)
+                    logging.info(f"[{download_id}] API Response status: {resp.status_code}")
+                    
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        logging.info(f"[{download_id}] API Response data: {str(data)[:200]}...")
 
-                # DRM response (MPD + KEYS)
-                if isinstance(data, dict) and "KEYS" in data and "MPD" in data:
-                    mpd = data.get("MPD")
-                    keys = data.get("KEYS", [])
-                    url = mpd
-                    keys_string = " ".join([f"--key {k}" for k in keys])
-                    print(f"✅ DRM Content - Got {len(keys)} keys")
+                        # DRM response (MPD + KEYS)
+                        if isinstance(data, dict) and "KEYS" in data and "MPD" in data:
+                            mpd = data.get("MPD")
+                            keys = data.get("KEYS", [])
+                            url = mpd
+                            keys_string = " ".join([f"--key {k}" for k in keys])
+                            logging.info(f"[{download_id}] ✅ DRM Content - Got {len(keys)} keys")
 
-                # Non-DRM response (direct url)
-                elif isinstance(data, dict) and "url" in data:
-                    url = data.get("url")
-                    keys_string = ""
-                    print("✅ Non-DRM Content - Got direct URL")
+                        # Non-DRM response (direct url)
+                        elif isinstance(data, dict) and "url" in data:
+                            url = data.get("url")
+                            keys_string = ""
+                            logging.info(f"[{download_id}] ✅ Non-DRM Content - Got direct URL: {url}")
 
-                else:
-                    # Unexpected response format
-                    await m.reply_text("⚠️@ITSGOLU_OFFICIAL returned unexpected response, attempting fallback...")
-                    # Try helper fallback that used to work for drm-only endpoints
+                        else:
+                            # Unexpected response format
+                            logging.warning(f"[{download_id}] ⚠️ Unexpected API response format")
+                            await m.reply_text("⚠️@ITSGOLU_OFFICIAL returned unexpected response, attempting fallback...")
+                            # Try helper fallback that used to work for drm-only endpoints
+                            try:
+                                res = helper.get_mps_and_keys2(url_norm)
+                                if res:
+                                    mpd, keys = res
+                                    url = mpd
+                                    keys_string = " ".join([f"--key {k}" for k in keys])
+                                    logging.info(f"[{download_id}] 🔁 Fallback succeeded via helper.get_mps_and_keys2")
+                                else:
+                                    logging.warning(f"[{download_id}] ⚠️ Fallback returned nothing. Using original URL")
+                                    keys_string = ""
+                            except Exception as e_fallback:
+                                logging.error(f"[{download_id}] Fallback error: {e_fallback}")
+                                keys_string = ""
+                    else:
+                        logging.error(f"[{download_id}] API returned status {resp.status_code}")
+                        
+                except Exception as e_api:
+                    # API failed — attempt helper fallback before giving up
+                    logging.error(f"[{download_id}] ❌ ITSGOLU API failed: {str(e_api)}")
+                    await m.reply_text(f"❌https://t.me/SDV_BOTz API failed: {str(e_api)} — attempting fallback...")
                     try:
                         res = helper.get_mps_and_keys2(url_norm)
                         if res:
                             mpd, keys = res
                             url = mpd
                             keys_string = " ".join([f"--key {k}" for k in keys])
-                            print("🔁 Fallback succeeded via helper.get_mps_and_keys2")
+                            logging.info(f"[{download_id}] 🔁 Fallback succeeded via helper.get_mps_and_keys2")
                         else:
-                            print("⚠️ Fallback returned nothing. Using original URL")
+                            logging.warning(f"[{download_id}] ⚠️ Fallback returned nothing. Using original URL")
                             keys_string = ""
                     except Exception as e_fallback:
-                        print(f"Fallback error: {e_fallback}")
+                        logging.error(f"[{download_id}] Fallback error: {e_fallback}")
                         keys_string = ""
 
-            except Exception as e_api:
-                # API failed — attempt helper fallback before giving up
-                await m.reply_text(f"❌https://t.me/SDV_BOTz API failed: {str(e_api)} — attempting fallback...")
+            #elif "classplusapp" in url:
+                #signed_api = f"https://covercel.vercel.app/extract_keys?url={url}@bots_updatee&user_id={user_id}"
+                #response = requests.get(signed_api, timeout=20)
+                #url = response.text.strip()
+                #url = response.json()['url']  
+                
+            # legacy branches replaced by unified handler above
+            # keep some older checks for coverage
+            elif 'videos.classplusapp' in url or "tencdn.classplusapp" in url or "webvideos.classplusapp.com" in url:
+                # call unified API as well
                 try:
-                    res = helper.get_mps_and_keys2(url_norm)
-                    if res:
-                        mpd, keys = res
-                        url = mpd
-                        keys_string = " ".join([f"--key {k}" for k in keys])
-                        print("🔁 Fallback succeeded via helper.get_mps_and_keys2")
-                    else:
-                        print("⚠️ Fallback returned nothing. Using original URL")
-                        keys_string = ""
-                except Exception as e_fallback:
-                    print(f"Fallback error: {e_fallback}")
+                    url_norm = url
+                    api_url_call = f"https://itsgolu-cp-api.vercel.app/itsgolu?url={url_norm}@ITSGOLU_OFFICIAL&user_id={user_id}"
+                    logging.info(f"[{download_id}] Calling ITSGOLU API for video URL: {api_url_call}")
+                    resp = requests.get(api_url_call, timeout=30)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if isinstance(data, dict) and "url" in data:
+                            url = data.get('url')
+                            keys_string = ""
+                            logging.info(f"[{download_id}] Got direct URL from API")
+                        elif isinstance(data, dict) and "MPD" in data and "KEYS" in data:
+                            mpd = data.get('MPD')
+                            keys = data.get('KEYS', [])
+                            url = mpd
+                            keys_string = " ".join([f"--key {k}" for k in keys])
+                            logging.info(f"[{download_id}] Got DRM content from API with {len(keys)} keys")
+                except Exception as e:
+                    logging.error(f"[{download_id}] Video URL API call failed: {str(e)}")
+                    # leave url as-is
                     keys_string = ""
 
-        #elif "classplusapp" in url:
-            #signed_api = f"https://covercel.vercel.app/extract_keys?url={url}@bots_updatee&user_id={user_id}"
-            #response = requests.get(signed_api, timeout=20)
-            #url = response.text.strip()
-            #url = response.json()['url']  
-            
-        # legacy branches replaced by unified handler above
-        # keep some older checks for coverage
-        elif 'videos.classplusapp' in url or "tencdn.classplusapp" in url or "webvideos.classplusapp.com" in url:
-            # call unified API as well
-            try:
-                url_norm = url
-                api_url_call = f"https://itsgolu-cp-api.vercel.app/itsgolu?url={url_norm}@ITSGOLU_OFFICIAL&user_id={user_id}"
-                resp = requests.get(api_url_call, timeout=30)
-                data = resp.json()
-                if isinstance(data, dict) and "url" in data:
-                    url = data.get('url')
-                    keys_string = ""
-                elif isinstance(data, dict) and "MPD" in data and "KEYS" in data:
-                    mpd = data.get('MPD')
-                    keys = data.get('KEYS', [])
-                    url = mpd
-                    keys_string = " ".join([f"--key {k}" for k in keys])
-            except Exception:
-                # leave url as-is
-                keys_string = ""
+           
+            if "edge.api.brightcove.com" in url:
+                bcov = f'bcov_auth={cwtoken}'
+                url = url.split("bcov_auth")[0]+bcov
+                logging.info(f"[{download_id}] Brightcove URL updated")
 
-       
-        if "edge.api.brightcove.com" in url:
-            bcov = f'bcov_auth={cwtoken}'
-            url = url.split("bcov_auth")[0]+bcov
+            #elif "d1d34p8vz63oiq" in url or "sec1.pw.live" in url:
+            elif "childId" in url and "parentId" in url:
+                url = f"https://anonymouspwplayerrr-3dba7e3fb6a8.herokuapp.com/pw?url={url}&token={pwtoken}"
+                logging.info(f"[{download_id}] PW URL updated")
+                                      
+            elif 'encrypted.m' in url:
+                appxkey = url.split('*')[1]
+                url = url.split('*')[0]
+                logging.info(f"[{download_id}] Encrypted URL detected with key: {appxkey[:10]}...")
 
-        #elif "d1d34p8vz63oiq" in url or "sec1.pw.live" in url:
-        elif "childId" in url and "parentId" in url:
-            url = f"https://anonymouspwplayerrr-3dba7e3fb6a8.herokuapp.com/pw?url={url}&token={pwtoken}"
-                                  
-        elif 'encrypted.m' in url:
-            appxkey = url.split('*')[1]
-            url = url.split('*')[0]
-
-        if "youtu" in url:
-            ytf = f"bv*[height<={raw_text2}][ext=mp4]+ba[ext=m4a]/b[height<=?{raw_text2}]"
-        elif "embed" in url:
-            ytf = f"bestvideo[height<={raw_text2}]+bestaudio/best[height<={raw_text2}]"
-        else:
-            ytf = f"b[height<={raw_text2}]/bv[height<={raw_text2}]+ba/b/bv+ba"
-       
-        if "jw-prod" in url:
-            cmd = f'yt-dlp -o "{name}.mp4" "{url}"'
-        elif "webvideos.classplusapp." in url:
-           cmd = f'yt-dlp --add-header "referer:https://web.classplusapp.com/" --add-header "x-cdn-tag:empty" -f "{ytf}" "{url}" -o "{name}.mp4"'
-        elif "youtube.com" in url or "youtu.be" in url:
-            cmd = f'yt-dlp --cookies youtube_cookies.txt -f "{ytf}" "{url}" -o "{name}.mp4"'
-        else:
-            cmd = f'yt-dlp -f "{ytf}" "{url}" -o "{name}.mp4"'
-#........................................................................................................................................................................................
-        try:
-            if m.text:
-                cc = f'[{name1} [{res}p].mkv]({link0})'
-                cc1 = f'[{name1}.pdf]({link0})'
-                cczip = f'[{name1}.zip]({link0})'
-                ccimg = f'[{name1}.jpg]({link0})'
-                ccm = f'[{name1}.mp3]({link0})'
-                cchtml = f'[{name1}.html]({link0})'
+            if "youtu" in url:
+                ytf = f"bv*[height<={raw_text2}][ext=mp4]+ba[ext=m4a]/b[height<=?{raw_text2}]"
+            elif "embed" in url:
+                ytf = f"bestvideo[height<={raw_text2}]+bestaudio/best[height<={raw_text2}]"
             else:
-                if topic == "/yes":
-                    if caption == "/cc1":
-                        cc = f'[🎥]Vid Id : {str(index).zfill(3)}\n**Video Title :** `{v_name} [{res}p].mkv`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                        cc1 = f'[📕]Pdf Id : {str(index).zfill(3)}\n**File Title :** `{v_name}.pdf`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                        cczip = f'[📁]Zip Id : {str(index).zfill(3)}\n**Zip Title :** `{v_name}.zip`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                        ccimg = f'[🖼️]Img Id : {str(index).zfill(3)}\n**Img Title :** `{v_name}.jpg`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                        cchtml = f'[🌐]Html Id : {str(index).zfill(3)}\n**Html Title :** `{v_name}.html`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                        ccyt = f'[🎥]Vid Id : {str(index).zfill(3)}\n**Video Title :** `{v_name}.mp4`\n<a href="{url}">__**Click Here to Watch Stream**__</a>\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                        ccm = f'[🎵]Mp3 Id : {str(index).zfill(3)}\n**Audio Title :** `{v_name}.mp3`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
-                    elif caption == "/cc2":
-                        cc = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🎞️ Title :</b> {v_name}\n<b>├── Extention :  {CR} .mkv</b>\n<b>├── Resolution : [{res}]</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        cc1 = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>📁 Title :</b> {v_name}\n<b>├── Extention :  {CR} .pdf</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        cczip = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>📒 Title :</b> {v_name}\n<b>├── Extention :  {CR} .zip</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        ccimg = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🖼️ Title :</b> {v_name}\n<b>├── Extention :  {CR} .jpg</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        ccm = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🎵 Title :</b> {v_name}\n<b>├── Extention :  {CR} .mp3</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        cchtml = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🌐 Title :</b> {v_name}\n<b>├── Extention :  {CR} .html</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                    else:
-                        cc = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} [{res}p] .mkv'
-                        cc1 = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .pdf'
-                        cczip = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .zip'
-                        ccimg = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .jpg'
-                        ccm = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .mp3'
-                        cchtml = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .html'
+                ytf = f"b[height<={raw_text2}]/bv[height<={raw_text2}]+ba/b/bv+ba"
+           
+            if "jw-prod" in url:
+                cmd = f'yt-dlp -o "{name}.mp4" "{url}"'
+            elif "webvideos.classplusapp." in url:
+               cmd = f'yt-dlp --add-header "referer:https://web.classplusapp.com/" --add-header "x-cdn-tag:empty" -f "{ytf}" "{url}" -o "{name}.mp4"'
+            elif "youtube.com" in url or "youtu.be" in url:
+                cmd = f'yt-dlp --cookies youtube_cookies.txt -f "{ytf}" "{url}" -o "{name}.mp4"'
+            else:
+                cmd = f'yt-dlp -f "{ytf}" "{url}" -o "{name}.mp4"'
+            
+            logging.info(f"[{download_id}] Download command: {cmd}")
+    #........................................................................................................................................................................................
+            try:
+                if m.text:
+                    cc = f'[{name1} [{res}p].mkv]({link0})'
+                    cc1 = f'[{name1}.pdf]({link0})'
+                    cczip = f'[{name1}.zip]({link0})'
+                    ccimg = f'[{name1}.jpg]({link0})'
+                    ccm = f'[{name1}.mp3]({link0})'
+                    cchtml = f'[{name1}.html]({link0})'
                 else:
-                    if caption == "/cc1":
-                        cc = f'[🎥]Vid Id : {str(index).zfill(3)}\n**Video Title :** `{name1} [{res}p].mkv`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
-                        cc1 = f'[📕]Pdf Id : {str(index).zfill(3)}\n**File Title :** `{name1}.pdf`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
-                        cczip = f'[📁]Zip Id : {str(index).zfill(3)}\n**Zip Title :** `{name1}.zip`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n' 
-                        ccimg = f'[🖼️]Img Id : {str(index).zfill(3)}\n**Img Title :** `{name1}.jpg`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
-                        ccm = f'[🎵]Audio Id : {str(index).zfill(3)}\n**Audio Title :** `{name1}.mp3`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
-                        cchtml = f'[🌐]Html Id : {str(index).zfill(3)}\n**Html Title :** `{name1}.html`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
-                    elif caption == "/cc2":
-                        cc = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🎞️ Title :</b> {name1}\n<b>├── Extention :  {CR} .mkv</b>\n<b>├── Resolution : [{res}]</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        cc1 = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>📁 Title :</b> {name1}\n<b>├── Extention :  {CR} .pdf</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        cczip = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>📒 Title :</b> {name1}\n<b>├── Extention :  {CR} .zip</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        ccimg = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🖼️ Title :</b> {name1}\n<b>├── Extention :  {CR} .jpg</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        ccm = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🎵 Title :</b> {name1}\n<b>├── Extention :  {CR} .mp3</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
-                        cchtml = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🌐 Title :</b> {name1}\n<b>├── Extention :  {CR} .html</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                    if topic == "/yes":
+                        if caption == "/cc1":
+                            cc = f'[🎥]Vid Id : {str(index).zfill(3)}\n**Video Title :** `{v_name} [{res}p].mkv`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                            cc1 = f'[📕]Pdf Id : {str(index).zfill(3)}\n**File Title :** `{v_name}.pdf`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                            cczip = f'[📁]Zip Id : {str(index).zfill(3)}\n**Zip Title :** `{v_name}.zip`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                            ccimg = f'[🖼️]Img Id : {str(index).zfill(3)}\n**Img Title :** `{v_name}.jpg`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                            cchtml = f'[🌐]Html Id : {str(index).zfill(3)}\n**Html Title :** `{v_name}.html`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                            ccyt = f'[🎥]Vid Id : {str(index).zfill(3)}\n**Video Title :** `{v_name}.mp4`\n<a href="{url}">__**Click Here to Watch Stream**__</a>\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                            ccm = f'[🎵]Mp3 Id : {str(index).zfill(3)}\n**Audio Title :** `{v_name}.mp3`\n<blockquote><b>Batch Name : {b_name}\nTopic Name : {t_name}</b></blockquote>\n\n**Extracted by➤**{CR}\n'
+                        elif caption == "/cc2":
+                            cc = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🎞️ Title :</b> {v_name}\n<b>├── Extention :  {CR} .mkv</b>\n<b>├── Resolution : [{res}]</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            cc1 = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>📁 Title :</b> {v_name}\n<b>├── Extention :  {CR} .pdf</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            cczip = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>📒 Title :</b> {v_name}\n<b>├── Extention :  {CR} .zip</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            ccimg = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🖼️ Title :</b> {v_name}\n<b>├── Extention :  {CR} .jpg</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            ccm = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🎵 Title :</b> {v_name}\n<b>├── Extention :  {CR} .mp3</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            cchtml = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<blockquote><b>⋅ ─  {t_name}  ─ ⋅</b></blockquote>\n\n<b>🌐 Title :</b> {v_name}\n<b>├── Extention :  {CR} .html</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                        else:
+                            cc = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} [{res}p] .mkv'
+                            cc1 = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .pdf'
+                            cczip = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .zip'
+                            ccimg = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .jpg'
+                            ccm = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .mp3'
+                            cchtml = f'<blockquote><b>⋅ ─ {t_name} ─ ⋅</b></blockquote>\n<b>{str(index).zfill(3)}.</b> {v_name} .html'
                     else:
-                        cc = f'<b>{str(index).zfill(3)}.</b> {name1} [{res}p] .mkv'
-                        cc1 = f'<b>{str(index).zfill(3)}.</b> {name1} .pdf'
-                        cczip = f'<b>{str(index).zfill(3)}.</b> {name1} .zip'
-                        ccimg = f'<b>{str(index).zfill(3)}.</b> {name1} .jpg'
-                        ccm = f'<b>{str(index).zfill(3)}.</b> {name1} .mp3'
-                        cchtml = f'<b>{str(index).zfill(3)}.</b> {name1} .html'
-#........................................................................................................................................................................................
-            remaining_links = len(links) - (index - arg + 1)
-            progress = ((index - arg + 1) / (len(links) - arg + 1)) * 100
-            Show = f"<i><b>Video Downloading</b></i>\n<blockquote><b>{str(index).zfill(3)}) {name1}</b></blockquote>" 
-            Show1 = f"<blockquote>🚀𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 » {progress:.2f}%</blockquote>\n┃\n" \
-                    f"┣🔗𝐈𝐧𝐝𝐞𝐱 » {index}/{len(links)}\n┃\n" \
-                    f"╰━🖇️𝐑𝐞𝐦𝐚𝐢𝐧 » {remaining_links}\n" \
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n" \
-                    f"<blockquote><b>⚡Dᴏᴡɴʟᴏᴀᴅɪɴɢ Sᴛᴀʀᴛᴇᴅ...⏳</b></blockquote>\n┃\n" \
-                    f"┣💃𝐂𝐫𝐞𝐝𝐢𝐭 » {CR}\n┃\n" \
-                    f"╰━📚𝐁𝐚𝐭𝐜𝐡 » {b_name}\n" \
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n" \
-                    f"<blockquote>📚𝐓𝐢𝐭𝐥𝐞 » {namef}</blockquote>\n┃\n" \
-                    f"┣🍁𝐐𝐮𝐚𝐥𝐢𝐭𝐲 » {quality}\n┃\n" \
-                    f'┣━🔗𝐋𝐢𝐧𝐤 » <a href="{link0}">**Original Link**</a>\n┃\n' \
-                    f'╰━━🖇️𝐔𝐫𝐥 » <a href="{url}">**Api Link**</a>\n' \
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━\n" \
-                    f"🛑**Send** /stop **to stop process**\n┃\n" \
-                    f"╰━✦𝐁𝐨𝐭 𝐌𝐚𝐝𝐞 𝐁𝐲 ✦ {CREDIT}"
-#........................................................................................................................................................................................           
-            if "drive" in url:
-                try:
-                    ka = await helper.download(url, name)
-                    copy = await bot.send_document(chat_id=channel_id,document=ka, caption=cc1)
-                    os.remove(ka)
-                except FloodWait as e:
-                    await m.reply_text(str(e))
-                    time.sleep(e.x)
-                    return None
-    
-            elif "pdf" in url:
-                if "cwmediabkt99" in url:
-                    max_retries = 15  # Define the maximum number of retries
-                    retry_delay = 4  # Delay between retries in seconds
-                    success = False  # To track whether the download was successful
-                    failure_msgs = []  # To keep track of failure messages
-                    
-                    for attempt in range(max_retries):
-                        try:
-                            await asyncio.sleep(retry_delay)
-                            url = url.replace(" ", "%20")
-                            scraper = cloudscraper.create_scraper()
-                            response = scraper.get(url)
-
-                            if response.status_code == 200:
-                                with open(f'{namef}.pdf', 'wb') as file:
-                                    file.write(response.content)
-                                await asyncio.sleep(retry_delay)  # Optional, to prevent spamming
-                                copy = await bot.send_document(chat_id=channel_id, document=f'{namef}.pdf', caption=cc1)
-                                os.remove(f'{namef}.pdf')
-                                success = True
-                                break  # Exit the retry loop if successful
-                            else:
-                                failure_msg = await m.reply_text(f"Attempt {attempt + 1}/{max_retries} failed: {response.status_code} {response.reason}")
-                                failure_msgs.append(failure_msg)
-                                
-                        except Exception as e:
-                            failure_msg = await m.reply_text(f"Attempt {attempt + 1}/{max_retries} failed: {str(e)}")
-                            failure_msgs.append(failure_msg)
-                            await asyncio.sleep(retry_delay)
-                            continue 
-                    for msg in failure_msgs:
-                        await msg.delete()
-                        
-                else:
+                        if caption == "/cc1":
+                            cc = f'[🎥]Vid Id : {str(index).zfill(3)}\n**Video Title :** `{name1} [{res}p].mkv`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
+                            cc1 = f'[📕]Pdf Id : {str(index).zfill(3)}\n**File Title :** `{name1}.pdf`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
+                            cczip = f'[📁]Zip Id : {str(index).zfill(3)}\n**Zip Title :** `{name1}.zip`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n' 
+                            ccimg = f'[🖼️]Img Id : {str(index).zfill(3)}\n**Img Title :** `{name1}.jpg`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
+                            ccm = f'[🎵]Audio Id : {str(index).zfill(3)}\n**Audio Title :** `{name1}.mp3`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
+                            cchtml = f'[🌐]Html Id : {str(index).zfill(3)}\n**Html Title :** `{name1}.html`\n<blockquote><b>Batch Name :</b> {b_name}</blockquote>\n\n**Extracted by➤**{CR}\n'
+                        elif caption == "/cc2":
+                            cc = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🎞️ Title :</b> {name1}\n<b>├── Extention :  {CR} .mkv</b>\n<b>├── Resolution : [{res}]</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            cc1 = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>📁 Title :</b> {name1}\n<b>├── Extention :  {CR} .pdf</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            cczip = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>📒 Title :</b> {name1}\n<b>├── Extention :  {CR} .zip</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            ccimg = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🖼️ Title :</b> {name1}\n<b>├── Extention :  {CR} .jpg</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            ccm = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🎵 Title :</b> {name1}\n<b>├── Extention :  {CR} .mp3</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                            cchtml = f"——— ✦ {str(index).zfill(3)} ✦ ———\n\n<b>🌐 Title :</b> {name1}\n<b>├── Extention :  {CR} .html</b>\n<blockquote><b>📚 Course : {b_name}</b></blockquote>\n\n**🌟 Extracted By : {CR}**"
+                        else:
+                            cc = f'<b>{str(index).zfill(3)}.</b> {name1} [{res}p] .mkv'
+                            cc1 = f'<b>{str(index).zfill(3)}.</b> {name1} .pdf'
+                            cczip = f'<b>{str(index).zfill(3)}.</b> {name1} .zip'
+                            ccimg = f'<b>{str(index).zfill(3)}.</b> {name1} .jpg'
+                            ccm = f'<b>{str(index).zfill(3)}.</b> {name1} .mp3'
+                            cchtml = f'<b>{str(index).zfill(3)}.</b> {name1} .html'
+    #........................................................................................................................................................................................
+                remaining_links = len(links) - (index - arg + 1)
+                progress = ((index - arg + 1) / (len(links) - arg + 1)) * 100
+                Show = f"<i><b>Video Downloading</b></i>\n<blockquote><b>{str(index).zfill(3)}) {name1}</b></blockquote>" 
+                Show1 = f"<blockquote>🚀𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 » {progress:.2f}%</blockquote>\n┃\n" \
+                        f"┣🔗𝐈𝐧𝐝𝐞𝐱 » {index}/{len(links)}\n┃\n" \
+                        f"╰━🖇️𝐑𝐞𝐦𝐚𝐢𝐧 » {remaining_links}\n" \
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━\n" \
+                        f"<blockquote><b>⚡Dᴏᴡɴʟᴏᴀᴅɪɴɢ Sᴛᴀʀᴛᴇᴅ...⏳</b></blockquote>\n┃\n" \
+                        f"┣💃𝐂𝐫𝐞𝐝𝐢𝐭 » {CR}\n┃\n" \
+                        f"╰━📚𝐁𝐚𝐭𝐜𝐡 » {b_name}\n" \
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n" \
+                        f"<blockquote>📚𝐓𝐢𝐭𝐥𝐞 » {namef}</blockquote>\n┃\n" \
+                        f"┣🍁𝐐𝐮𝐚𝐥𝐢𝐭𝐲 » {quality}\n┃\n" \
+                        f'┣━🔗𝐋𝐢𝐧𝐤 » <a href="{link0}">**Original Link**</a>\n┃\n' \
+                        f'╰━━🖇️𝐔𝐫𝐥 » <a href="{url}">**Api Link**</a>\n' \
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n" \
+                        f"🛑**Send** /stop **to stop process**\n┃\n" \
+                        f"╰━✦𝐁𝐨𝐭 𝐌𝐚𝐝𝐞 𝐁𝐲 ✦ {CREDIT}"
+    #........................................................................................................................................................................................           
+                if "drive" in url:
                     try:
-                        cmd = f'yt-dlp -o "{namef}.pdf" "{url}"'
-                        download_cmd = f"{cmd} -R 25 --fragment-retries 25"
-                        os.system(download_cmd)
-                        copy = await bot.send_document(chat_id=channel_id, document=f'{namef}.pdf', caption=cc1)
-                        os.remove(f'{namef}.pdf')
+                        logging.info(f"[{download_id}] Downloading from Google Drive")
+                        ka = await helper.download(url, name)
+                        copy = await bot.send_document(chat_id=channel_id, document=ka, caption=cc1)
+                        os.remove(ka)
+                        logging.info(f"[{download_id}] Google Drive download completed")
                     except FloodWait as e:
+                        logging.warning(f"[{download_id}] FloodWait: {str(e)}")
                         await m.reply_text(str(e))
                         time.sleep(e.x)
-                        return None
+                        return {"status": "failed", "index": index, "error": str(e)}
+                    except Exception as e:
+                        logging.error(f"[{download_id}] Google Drive download failed: {str(e)}")
+                        raise
         
-            elif any(ext in url for ext in [".jpg", ".jpeg", ".png"]):
-                try:
-                    ext = url.split('.')[-1]
-                    cmd = f'yt-dlp -o "{namef}.{ext}" "{url}"'
-                    download_cmd = f"{cmd} -R 25 --fragment-retries 25"
-                    os.system(download_cmd)
-                    copy = await bot.send_photo(chat_id=channel_id, photo=f'{namef}.{ext}', caption=ccimg)
-                    os.remove(f'{namef}.{ext}')
-                except FloodWait as e:
-                    await m.reply_text(str(e))
-                    time.sleep(e.x)
-                    return None
+                elif "pdf" in url:
+                    if "cwmediabkt99" in url:
+                        max_retries = 15
+                        retry_delay = 4
+                        success = False
+                        failure_msgs = []
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                logging.info(f"[{download_id}] PDF download attempt {attempt+1}/{max_retries}")
+                                await asyncio.sleep(retry_delay)
+                                url = url.replace(" ", "%20")
+                                scraper = cloudscraper.create_scraper()
+                                response = scraper.get(url, timeout=30)
 
-            elif any(ext in url for ext in [".mp3", ".wav", ".m4a"]):
-                try:
-                    ext = url.split('.')[-1]
-                    cmd = f'yt-dlp -o "{namef}.{ext}" "{url}"'
-                    download_cmd = f"{cmd} -R 25 --fragment-retries 25"
-                    os.system(download_cmd)
-                    copy = await bot.send_document(chat_id=channel_id, document=f'{namef}.{ext}', caption=ccm)
-                    os.remove(f'{namef}.{ext}')
-                except FloodWait as e:
-                    await m.reply_text(str(e))
-                    time.sleep(e.x)
-                    return None
-                    
-            elif 'encrypted.m' in url:    
-                prog = await bot.send_message(channel_id, Show, disable_web_page_preview=True)
-                prog1 = await m.reply_text(Show1, disable_web_page_preview=True)
-                res_file = await helper.download_and_decrypt_video(url, cmd, name, appxkey)  
-                filename = res_file  
-                await prog1.delete(True)
-                await prog.delete(True)
-                await helper.send_vid(bot, m, cc, filename, vidwatermark, thumb, name, prog, channel_id)
-                await asyncio.sleep(1)  
-                return None
+                                if response.status_code == 200:
+                                    with open(f'{namef}.pdf', 'wb') as file:
+                                        file.write(response.content)
+                                    await asyncio.sleep(retry_delay)
+                                    copy = await bot.send_document(chat_id=channel_id, document=f'{namef}.pdf', caption=cc1)
+                                    os.remove(f'{namef}.pdf')
+                                    success = True
+                                    logging.info(f"[{download_id}] PDF download successful")
+                                    break
+                                else:
+                                    error_msg = f"Attempt {attempt + 1}/{max_retries} failed: {response.status_code} {response.reason}"
+                                    logging.warning(f"[{download_id}] {error_msg}")
+                                    failure_msg = await m.reply_text(error_msg)
+                                    failure_msgs.append(failure_msg)
+                                    
+                            except Exception as e:
+                                error_msg = f"Attempt {attempt + 1}/{max_retries} failed: {str(e)}"
+                                logging.error(f"[{download_id}] {error_msg}")
+                                failure_msg = await m.reply_text(error_msg)
+                                failure_msgs.append(failure_msg)
+                                await asyncio.sleep(retry_delay)
+                                continue 
+                        for msg in failure_msgs:
+                            await msg.delete()
+                        
+                        if not success:
+                            raise Exception(f"Failed to download PDF after {max_retries} attempts")
+                            
+                    else:
+                        try:
+                            logging.info(f"[{download_id}] Downloading PDF with yt-dlp")
+                            cmd = f'yt-dlp -o "{namef}.pdf" "{url}"'
+                            download_cmd = f"{cmd} -R 25 --fragment-retries 25"
+                            result = os.system(download_cmd)
+                            if result != 0:
+                                raise Exception(f"yt-dlp returned error code: {result}")
+                            copy = await bot.send_document(chat_id=channel_id, document=f'{namef}.pdf', caption=cc1)
+                            os.remove(f'{namef}.pdf')
+                            logging.info(f"[{download_id}] PDF download completed")
+                        except FloodWait as e:
+                            logging.warning(f"[{download_id}] FloodWait: {str(e)}")
+                            await m.reply_text(str(e))
+                            time.sleep(e.x)
+                            return {"status": "failed", "index": index, "error": str(e)}
+                        except Exception as e:
+                            logging.error(f"[{download_id}] PDF download failed: {str(e)}")
+                            raise
+           
+                elif any(ext in url for ext in [".jpg", ".jpeg", ".png"]):
+                    try:
+                        logging.info(f"[{download_id}] Downloading image")
+                        ext = url.split('.')[-1]
+                        cmd = f'yt-dlp -o "{namef}.{ext}" "{url}"'
+                        download_cmd = f"{cmd} -R 25 --fragment-retries 25"
+                        result = os.system(download_cmd)
+                        if result != 0:
+                            raise Exception(f"yt-dlp returned error code: {result}")
+                        copy = await bot.send_photo(chat_id=channel_id, photo=f'{namef}.{ext}', caption=ccimg)
+                        os.remove(f'{namef}.{ext}')
+                        logging.info(f"[{download_id}] Image download completed")
+                    except FloodWait as e:
+                        logging.warning(f"[{download_id}] FloodWait: {str(e)}")
+                        await m.reply_text(str(e))
+                        time.sleep(e.x)
+                        return {"status": "failed", "index": index, "error": str(e)}
+                    except Exception as e:
+                        logging.error(f"[{download_id}] Image download failed: {str(e)}")
+                        raise
 
-            elif 'drmcdni' in url or 'drm/wv' in url or 'drm/common' in url:
-                prog = await bot.send_message(channel_id, Show, disable_web_page_preview=True)
-                prog1 = await m.reply_text(Show1, disable_web_page_preview=True)
-                # mpd and keys_string should have been set by ITSGOLU handler above for DRM
-                res_file = await helper.decrypt_and_merge_video(mpd, keys_string, path, name, raw_text2)
-                filename = res_file
-                await prog1.delete(True)
-                await prog.delete(True)
-                await helper.send_vid(bot, m, cc, filename, vidwatermark, thumb, name, prog, channel_id)
-                await asyncio.sleep(1)
-                return None
+                elif any(ext in url for ext in [".mp3", ".wav", ".m4a"]):
+                    try:
+                        logging.info(f"[{download_id}] Downloading audio")
+                        ext = url.split('.')[-1]
+                        cmd = f'yt-dlp -o "{namef}.{ext}" "{url}"'
+                        download_cmd = f"{cmd} -R 25 --fragment-retries 25"
+                        result = os.system(download_cmd)
+                        if result != 0:
+                            raise Exception(f"yt-dlp returned error code: {result}")
+                        copy = await bot.send_document(chat_id=channel_id, document=f'{namef}.{ext}', caption=ccm)
+                        os.remove(f'{namef}.{ext}')
+                        logging.info(f"[{download_id}] Audio download completed")
+                    except FloodWait as e:
+                        logging.warning(f"[{download_id}] FloodWait: {str(e)}")
+                        await m.reply_text(str(e))
+                        time.sleep(e.x)
+                        return {"status": "failed", "index": index, "error": str(e)}
+                    except Exception as e:
+                        logging.error(f"[{download_id}] Audio download failed: {str(e)}")
+                        raise
+                        
+                elif 'encrypted.m' in url:    
+                    logging.info(f"[{download_id}] Downloading encrypted video")
+                    prog = await bot.send_message(channel_id, Show, disable_web_page_preview=True)
+                    prog1 = await m.reply_text(Show1, disable_web_page_preview=True)
+                    try:
+                        res_file = await helper.download_and_decrypt_video(url, cmd, name, appxkey)  
+                        filename = res_file  
+                        await prog1.delete(True)
+                        await prog.delete(True)
+                        await helper.send_vid(bot, m, cc, filename, vidwatermark, thumb, name, prog, channel_id)
+                        logging.info(f"[{download_id}] Encrypted video download completed")
+                    except Exception as e:
+                        await prog1.delete(True)
+                        await prog.delete(True)
+                        logging.error(f"[{download_id}] Encrypted video download failed: {str(e)}")
+                        raise
+                    await asyncio.sleep(1)  
+                    return {"status": "success", "index": index}
+
+                elif 'drmcdni' in url or 'drm/wv' in url or 'drm/common' in url:
+                    logging.info(f"[{download_id}] Downloading DRM content")
+                    prog = await bot.send_message(channel_id, Show, disable_web_page_preview=True)
+                    prog1 = await m.reply_text(Show1, disable_web_page_preview=True)
+                    try:
+                        # mpd and keys_string should have been set by ITSGOLU handler above for DRM
+                        if not mpd:
+                            mpd = url
+                        res_file = await helper.decrypt_and_merge_video(mpd, keys_string, path, name, raw_text2)
+                        filename = res_file
+                        await prog1.delete(True)
+                        await prog.delete(True)
+                        await helper.send_vid(bot, m, cc, filename, vidwatermark, thumb, name, prog, channel_id)
+                        logging.info(f"[{download_id}] DRM content download completed")
+                    except Exception as e:
+                        await prog1.delete(True)
+                        await prog.delete(True)
+                        logging.error(f"[{download_id}] DRM content download failed: {str(e)}")
+                        raise
+                    await asyncio.sleep(1)
+                    return {"status": "success", "index": index}
      
-            else:
-                prog = await bot.send_message(channel_id, Show, disable_web_page_preview=True)
-                prog1 = await m.reply_text(Show1, disable_web_page_preview=True)
-                res_file = await helper.download_video(url, cmd, name)
-                filename = res_file
-                await prog1.delete(True)
-                await prog.delete(True)
-                await helper.send_vid(bot, m, cc, filename, vidwatermark, thumb, name, prog, channel_id)
-                time.sleep(1)
-                return None
-            
+                else:
+                    logging.info(f"[{download_id}] Downloading regular video")
+                    prog = await bot.send_message(channel_id, Show, disable_web_page_preview=True)
+                    prog1 = await m.reply_text(Show1, disable_web_page_preview=True)
+                    try:
+                        res_file = await helper.download_video(url, cmd, name)
+                        filename = res_file
+                        await prog1.delete(True)
+                        await prog.delete(True)
+                        await helper.send_vid(bot, m, cc, filename, vidwatermark, thumb, name, prog, channel_id)
+                        logging.info(f"[{download_id}] Video download completed")
+                    except Exception as e:
+                        await prog1.delete(True)
+                        await prog.delete(True)
+                        logging.error(f"[{download_id}] Video download failed: {str(e)}")
+                        raise
+                    time.sleep(1)
+                    return {"status": "success", "index": index}
+                
+            except Exception as e:
+                error_msg = str(e)
+                logging.error(f"[{download_id}] Download failed: {error_msg}", exc_info=True)
+                await bot.send_message(channel_id, f'⚠️**Downloading Failed**⚠️\n**Name** =>> `{str(index).zfill(3)} {name1}`\n**Url** =>> {url}\n\n<blockquote expandable><i><b>Failed Reason: {error_msg}</b></i></blockquote>', disable_web_page_preview=True)
+                return {"status": "failed", "index": index, "error": error_msg}
+                
         except Exception as e:
-            await bot.send_message(channel_id, f'⚠️**Downloading Failed**⚠️\n**Name** =>> `{str(index).zfill(3)} {name1}`\n**Url** =>> {url}\n\n<blockquote expandable><i><b>Failed Reason: {str(e)}</b></i></blockquote>', disable_web_page_preview=True)
-            return e
+            error_msg = str(e)
+            logging.error(f"[{download_id}] Unexpected error in download_single_link: {error_msg}", exc_info=True)
+            return {"status": "failed", "index": index, "error": error_msg}
 
     # Process downloads with concurrency control
     download_tasks = []
@@ -641,30 +757,28 @@ async def drm_handler(bot: Client, m: Message):
             globals.cancel_requested = False
             return
         
-        # Acquire semaphore before starting new download
-        async def download_with_semaphore(index, link_data):
-            async with semaphore:
-                result = await download_single_link(index + 1, link_data)
-                if result:
-                    return 1  # Failed
-                return 0  # Success
-        
-        task = asyncio.create_task(download_with_semaphore(i, links[i]))
+        # Create task for each download
+        task = asyncio.create_task(download_single_link(i + 1, links[i]))
         download_tasks.append(task)
-        
-        # Update count after task creation
-        count = i + 2
     
     # Wait for all downloads to complete
     results = await asyncio.gather(*download_tasks, return_exceptions=True)
-    failed_count = sum(1 for r in results if r == 1 or isinstance(r, Exception))
+    
+    # Process results
+    failed_count = 0
+    for result in results:
+        if isinstance(result, Exception):
+            failed_count += 1
+            logging.error(f"Download task failed with exception: {str(result)}")
+        elif isinstance(result, dict) and result.get("status") == "failed":
+            failed_count += 1
 
     success_count = len(links) - failed_count - (arg - 1)
     video_count = v2_count + mpd_count + m3u8_count + yt_count + drm_count + zip_count + other_count
+    
     if m.document:
         if raw_text7 == "/d":
             await bot.send_message(channel_id, f"<b>-┈━═.•°✅ Completed ✅°•.═━┈-</b>\n<blockquote><b>🎯Batch Name : {b_name}</b></blockquote>\n<blockquote>🔗 Total URLs: {len(links)} \n┃   ┠🔴 Total Failed URLs: {failed_count}\n┃   ┠🟢 Total Successful URLs: {success_count}\n┃   ┃   ┠🎥 Total Video URLs: {video_count}\n┃   ┃   ┠📄 Total PDF URLs: {pdf_count}\n┃   ┃   ┠📸 Total IMAGE URLs: {img_count}</blockquote>\n")
         else:
             await bot.send_message(channel_id, f"<b>-┈━═.•°✅ Completed ✅°•.═━┈-</b>\n<blockquote><b>🎯Batch Name : {b_name}</b></blockquote>\n<blockquote>🔗 Total URLs: {len(links)} \n┃   ┠🔴 Total Failed URLs: {failed_count}\n┃   ┠🟢 Total Successful URLs: {success_count}\n┃   ┃   ┠🎥 Total Video URLs: {video_count}\n┃   ┃   ┠📄 Total PDF URLs: {pdf_count}\n┃   ┃   ┠📸 Total IMAGE URLs: {img_count}</blockquote>\n")
             await bot.send_message(m.chat.id, f"<blockquote><b>✅ Your Task is completed, please check your Set Channel📱</b></blockquote>")
-            
