@@ -7,7 +7,7 @@ API_ID = int(environ.get("API_ID", "23801870"))
 API_HASH = environ.get("API_HASH", "9645cfafdfc9be9a7a46fb4874992cf6")
 BOT_TOKEN = environ.get("BOT_TOKEN", "")
 
-OWNER = int(environ.get("OWNER", "6877021488,6005627579"))
+OWNER = int(environ.get("OWNER", "6877021488"))
 CREDIT = environ.get("CREDIT", "𝕊𝔻𝕍 𝘽𝙊𝙏𝙎")
 cookies_file_path = os.getenv("cookies_file_path", "youtube_cookies.txt")
 
