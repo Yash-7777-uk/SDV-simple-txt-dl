@@ -11,10 +11,10 @@ OWNER = int(environ.get("OWNER", "6877021488"))
 CREDIT = environ.get("CREDIT", "𝕊𝔻𝕍 𝘽𝙊𝙏𝙎")
 cookies_file_path = os.getenv("cookies_file_path", "youtube_cookies.txt")
 
-TOTAL_USER = os.environ.get('TOTAL_USERS', '6877021488,6005627579').split(',')
+TOTAL_USER = os.environ.get('TOTAL_USERS', '6877021488 6005627579').split(',')
 TOTAL_USERS = [int(user_id) for user_id in TOTAL_USER]
 
-AUTH_USER = os.environ.get('AUTH_USERS', '6877021488,6005627579').split(',')
+AUTH_USER = os.environ.get('AUTH_USERS', '6877021488 6005627579').split(',')
 AUTH_USERS = [int(user_id) for user_id in AUTH_USER]
 if int(OWNER) not in AUTH_USERS:
     AUTH_USERS.append(int(OWNER))
